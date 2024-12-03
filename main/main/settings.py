@@ -31,7 +31,7 @@ DEBUG = True
 
 ALLOWED_HOSTS = []
 
-AUTH_USER_MODEL = "accounts.CustomUser"
+# AUTH_USER_MODEL = "accounts.CustomUser"
 SESSION_COOKIE_AGE = 7 * 24 * 60 * 60  # 1 week in seconds
 SESSION_EXPIRE_AT_BROWSER_CLOSE = False
 SESSION_SAVE_EVERY_REQUEST = True
