@@ -4,6 +4,31 @@ from django.contrib.auth.models import (
     PermissionsMixin,
 )
 from django.db import models
+from django.utils.timezone import now, timedelta
+
+
+# ---------------------------------------------------------------------
+class OTPRequest(models.Model):
+    # -----------------------------------------------------------------
+    def default_otp_expiry():
+        return now() + timedelta(minutes=5)
+
+    # -----------------------------------------------------------------
+    def default_otp_attemps_expiry():
+        return now() + timedelta(minutes=30)
+
+    phone_number = models.CharField(max_length=15, unique=True)
+    otp_code = models.CharField(max_length=6, blank=True, null=True)
+    otp_attemps = models.PositiveIntegerField(default=0)
+
+    otp_expiry = models.DateTimeField(default=default_otp_expiry)
+    otp_attemps_expiry = models.DateTimeField(
+        default=default_otp_attemps_expiry
+    )
+
+    # -----------------------------------------------------------------
+    def __str__(self):
+        return f"OTP for {self.phone_number}"
 
 
 # ---------------------------------------------------------------------
@@ -35,11 +60,6 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     date_joined = models.DateTimeField(auto_now_add=True)
     first_name = models.CharField(max_length=50, blank=True, null=True)
     last_name = models.CharField(max_length=50, blank=True, null=True)
-
-    otp_code = models.CharField(max_length=6, blank=True, null=True)
-    otp_created_at = models.DateTimeField(blank=True, null=True)
-    otp_trys = models.PositiveIntegerField(default=0)
-    otp_max_try_started_from = models.DateTimeField(blank=True, null=True)
 
     USERNAME_FIELD = "phone_number"
 
