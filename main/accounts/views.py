@@ -4,14 +4,11 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.views import APIView
 from rest_framework.decorators import api_view, permission_classes
 from django.utils.timezone import now, timedelta
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from .serializers import UserSerializer
 from .models import OTPRequest, CustomUser
 from .utils import generate_otp, send_sms
-
-
-# 1. send_otp (which handles otp creation too)
-# 2. verify_otp(which will create the user if it doesn't exist and login the user.)
 
 
 # ---------------------------------------------------------------------
@@ -67,7 +64,15 @@ def send_otp(request):
 # ---------------------------------------------------------------------
 @api_view(["POST"])
 @permission_classes([AllowAny])
-def verify_otp(request):
+def login_register(request):
+    if True in (
+        request.data.get("is_staff"),
+        request.data.get("is_superuser"),
+    ):
+        return Response(
+            {"detail": "You can't create admin/staff with this endpoint."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
     phone_number = request.data.get("phone_number")
     otp_code = request.data.get("otp_code")
 
@@ -101,43 +106,34 @@ def verify_otp(request):
     if not user:
         user = CustomUser.objects.create_user(phone_number=phone_number)
 
-    # LOGIN & AUTHENTICATE.
-
-    # Reset the otp_request
+    otp_request.reset_otp()
+    refresh = RefreshToken.for_user(user)
     return Response(
-        {"detail": f"User {user.phone_number} verified and logged in."},
+        {
+            "access": str(refresh.access_token),
+            "refresh": str(refresh),
+        },
         status=status.HTTP_200_OK,
     )
 
 
 # ---------------------------------------------------------------------
-def _create_user(request):
-    serializer = UserSerializer(data=request.data)
-    if serializer.is_valid():
-        serializer.save()
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-# ---------------------------------------------------------------------
 @api_view(["POST"])
-@permission_classes([AllowAny])
-def register(request):
-    if True in (
-        request.data.get("is_staff"),
-        request.data.get("is_superuser"),
-    ):
+@permission_classes([IsAuthenticated])
+def logout(request):
+    refresh_token = request.data.get("refresh_token")
+    if not refresh_token:
         return Response(
-            {"detail": "You can't create admin/staff with this endpoint."},
-            status=status.HTTP_403_FORBIDDEN,
-        )
-    if not request.data.get("phone_number"):
-        return Response(
-            {"detail": "phone_number is required."},
+            {"detail": "Refresh token required."},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    return _create_user(request)
+
+    token = RefreshToken(refresh_token)
+    token.blacklist()
+    return Response(
+        {"detail": "Successfully logged out."},
+        status=status.HTTP_200_OK,
+    )
 
 
 # ---------------------------------------------------------------------
@@ -154,4 +150,9 @@ def register_admin(request):
             {"detail": "Admin/Staff members must have a password."},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    return _create_user(request)
+    serializer = UserSerializer(data=request.data)
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

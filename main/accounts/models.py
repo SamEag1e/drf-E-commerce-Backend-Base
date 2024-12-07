@@ -21,14 +21,24 @@ class OTPRequest(models.Model):
     otp_code = models.CharField(max_length=6, blank=True, null=True)
     otp_attemps = models.PositiveIntegerField(default=0)
 
-    otp_expiry = models.DateTimeField(default=default_otp_expiry)
+    otp_expiry = models.DateTimeField(
+        blank=True, null=True, default=default_otp_expiry
+    )
     otp_attemps_expiry = models.DateTimeField(
-        default=default_otp_attemps_expiry
+        blank=True, null=True, default=default_otp_attemps_expiry
     )
 
     # -----------------------------------------------------------------
     def __str__(self):
         return f"OTP for {self.phone_number}"
+
+    # -----------------------------------------------------------------
+    def reset_otp(self):
+        self.otp_code = None
+        self.otp_expiry = None
+        self.otp_attemps = 0
+        self.otp_attemps_expiry = None
+        self.save()
 
 
 # ---------------------------------------------------------------------
