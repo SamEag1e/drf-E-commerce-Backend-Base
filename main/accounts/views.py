@@ -1,13 +1,12 @@
-from datetime import timedelta
-from django.utils.timezone import now
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.views import APIView
 from rest_framework.decorators import api_view, permission_classes
+from django.utils.timezone import now, timedelta
 
 from .serializers import UserSerializer
-from .models import OTPRequest
+from .models import OTPRequest, CustomUser
 from .utils import generate_otp, send_sms
 
 
@@ -104,6 +103,7 @@ def verify_otp(request):
 
     # LOGIN & AUTHENTICATE.
 
+    # Reset the otp_request
     return Response(
         {"detail": f"User {user.phone_number} verified and logged in."},
         status=status.HTTP_200_OK,
