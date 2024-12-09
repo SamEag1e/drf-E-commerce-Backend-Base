@@ -12,7 +12,50 @@ from .utils import generate_otp, send_sms
 
 
 # ---------------------------------------------------------------------
-def _veryify_otp(request):
+def _send_otp_check(request, otp_type):
+    phone_number = request.data.get("phone_number")
+    if not phone_number:
+        return (
+            False,
+            "phone_number is required.",
+            status.HTTP_400_BAD_REQUEST,
+        )
+    if not (
+        phone_number.startswith("+")
+        and phone_number[1:].isdigit()
+        and 10 <= len(phone_number) <= 15
+    ):
+        return (
+            False,
+            "Invalid phone number format. Use '+999999999'.",
+            status.HTTP_400_BAD_REQUEST,
+        )
+    otp_request, _ = OTPRequest.objects.get_or_create(
+        phone_number=phone_number
+    )
+    if otp_request.otp_attemps >= 3 and now() < otp_request.otp_attemps_expiry:
+        return (
+            False,
+            f"Max OTP attempts exceeded. Try again after {otp_request.otp_attemps_expiry}.",
+            status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+
+    if now() >= otp_request.otp_attemps_expiry:
+        otp_request.otp_attemps = 0
+
+    otp_request.otp_type = otp_type
+    otp_request.otp_attemps += 1
+    otp_request.otp_attemps_expiry = now() + timedelta(minutes=30)
+    otp_request.otp_code = generate_otp()
+    otp_request.otp_expiry = now() + timedelta(minutes=5)
+    otp_request.save()
+
+    send_sms(otp_request.phone_number, otp_request.otp_code)
+    return (True, "OTP sent successfully.", status.HTTP_200_OK)
+
+
+# ---------------------------------------------------------------------
+def _veryify_otp(request, otp_type):
     phone_number = request.data.get("phone_number")
     otp_code = request.data.get("otp_code")
     if not phone_number or not otp_code:
@@ -33,63 +76,26 @@ def _veryify_otp(request):
     if now() > otp_request.otp_expiry:
         return (False, "OTP has expired.", status.HTTP_400_BAD_REQUEST)
 
+    if otp_request.otp_type != otp_type:
+        return (False, "Invalid otp_type.", status.HTTP_400_BAD_REQUEST)
     if otp_request.otp_code != otp_code:
         return (False, "Invalid OTP.", status.HTTP_400_BAD_REQUEST)
     otp_request.delete()
-    return (True, "OTP is valid for the phone number.", status.HTTP_200_OK)
+    return (True, "OTP is valid.", status.HTTP_200_OK)
 
 
 # ---------------------------------------------------------------------
 @api_view(["POST"])
 @permission_classes([AllowAny])
-def send_otp(request):
-    phone_number = request.data.get("phone_number")
-    if not phone_number:
-        return Response(
-            {"detail": "phone_number is required."},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-    if not (
-        phone_number.startswith("+")
-        and phone_number[1:].isdigit()
-        and 10 <= len(phone_number) <= 15
-    ):
-        return Response(
-            {"detail": "Invalid phone number format. Use '+999999999'."},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-    otp_request, _ = OTPRequest.objects.get_or_create(
-        phone_number=phone_number
-    )
-    if otp_request.otp_attemps >= 3 and now() < otp_request.otp_attemps_expiry:
-        return Response(
-            {
-                "detail": "Max OTP attempts exceeded."
-                f"Try again after {otp_request.otp_attemps_expiry}."
-            },
-            status=status.HTTP_429_TOO_MANY_REQUESTS,
-        )
-
-    if now() >= otp_request.otp_attemps_expiry:
-        otp_request.otp_attemps = 0
-
-    otp_request.otp_attemps += 1
-    otp_request.otp_attemps_expiry = now() + timedelta(minutes=30)
-    otp_request.otp_code = generate_otp()
-    otp_request.otp_expiry = now() + timedelta(minutes=5)
-    otp_request.save()
-
-    send_sms(otp_request.phone_number, otp_request.otp_code)
-    return Response(
-        {"detail": "OTP sent successfully."},
-        status=status.HTTP_200_OK,
-    )
+def customer_login_register_otp(request):
+    _, detail, status_code = _send_otp_check(request, "customer_login")
+    return Response({"detail": detail}, status=status_code)
 
 
 # ---------------------------------------------------------------------
 @api_view(["POST"])
 @permission_classes([AllowAny])
-def login_register(request):
+def customer_login_register(request):
     if True in (
         request.data.get("is_staff"),
         request.data.get("is_superuser"),
@@ -98,7 +104,7 @@ def login_register(request):
             {"detail": "You can't register admin/staff with this endpoint."},
             status=status.HTTP_403_FORBIDDEN,
         )
-    is_valid, detail, status_code = _veryify_otp(request)
+    is_valid, detail, status_code = _veryify_otp(request, "customer_login")
     if not is_valid:
         return Response({"detail": detail}, status_code)
 
@@ -120,8 +126,75 @@ def login_register(request):
 
 # ---------------------------------------------------------------------
 @api_view(["POST"])
+@permission_classes([AllowAny])
+def admin_login_step_1(request):
+    phone_number = request.data.get("phone_number")
+    password = request.data.get("password")
+
+    if not phone_number or not password:
+        return Response(
+            {"detail": "phone_number and password are required."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    user = CustomUser.objects.filter(phone_number=phone_number).first()
+    if not user or not user.is_staff:
+        return Response(
+            {"detail": "Invalid phone number or not an admin."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    if not user.check_password(password):
+        return Response(
+            {"detail": "Incorrect password."},
+            status=status.HTTP_401_UNAUTHORIZED,
+        )
+    _, detail, status_code = _send_otp_check(request, "admin_login")
+    return Response({"detail": detail}, status=status_code)
+
+
+# ---------------------------------------------------------------------
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def admin_login_step_2(request):
+    is_valid, detail, status_code = _veryify_otp(request, "admin_login")
+
+    if not is_valid:
+        return Response({"detail": detail}, status=status_code)
+
+    phone_number = request.data.get("phone_number")
+    user = CustomUser.objects.filter(
+        phone_number=phone_number, is_staff=True
+    ).first()
+    if not user:
+        return Response(
+            {"detail": "Admin not found."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    refresh = RefreshToken.for_user(user)
+    return Response(
+        {
+            "detail": detail,
+            "access": str(refresh.access_token),
+            "refresh": str(refresh),
+        },
+        status=status_code,
+    )
+
+
+# ---------------------------------------------------------------------
+@api_view(["POST"])
 @permission_classes([IsAuthenticated])
-def register_admin(request):
+def admin_register_otp(request):
+    _, detail, status_code = _send_otp_check(request, "admin_register")
+    return Response({"detail": detail}, status=status_code)
+
+
+# ---------------------------------------------------------------------
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def admin_register(request):
     phone_number = request.data.get("phone_number")
     password = request.data.get("password")
     is_staff = request.data.get("is_staff", False)
@@ -143,7 +216,7 @@ def register_admin(request):
             {"detail": "Admin/Staff members must have a password."},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    is_valid, detail, status_code = _veryify_otp(request)
+    is_valid, detail, status_code = _veryify_otp(request, "admin_register")
     if not is_valid:
         return Response({"detail": detail}, status_code)
 
@@ -177,72 +250,6 @@ def register_admin(request):
     return Response(
         {"detail": "User updated to staff."},
         status=status.HTTP_201_CREATED,
-    )
-
-
-# ---------------------------------------------------------------------
-@api_view(["POST"])
-@permission_classes([AllowAny])
-def login_admin_step_1(request):
-    phone_number = request.data.get("phone_number")
-    password = request.data.get("password")
-
-    if not phone_number or not password:
-        return Response(
-            {"detail": "phone_number and password are required."},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    user = CustomUser.objects.filter(phone_number=phone_number).first()
-    if not user or not user.is_staff:
-        return Response(
-            {"detail": "Invalid phone number or not an admin."},
-            status=status.HTTP_403_FORBIDDEN,
-        )
-
-    if not user.check_password(password):
-        return Response(
-            {"detail": "Incorrect password."},
-            status=status.HTTP_401_UNAUTHORIZED,
-        )
-
-    response = send_otp(request)
-    if response.status_code == status.HTTP_200_OK:
-        return Response(
-            {"detail": "Credentials verified. OTP has been sent."},
-            status=status.HTTP_200_OK,
-        )
-
-    return response
-
-
-# ---------------------------------------------------------------------
-@api_view(["POST"])
-@permission_classes([AllowAny])
-def login_admin_step_2(request):
-    is_valid, detail, status_code = _veryify_otp(request)
-
-    if not is_valid:
-        return Response({"detail": detail}, status=status_code)
-
-    phone_number = request.data.get("phone_number")
-    user = CustomUser.objects.filter(
-        phone_number=phone_number, is_staff=True
-    ).first()
-    if not user:
-        return Response(
-            {"detail": "Admin not found."},
-            status=status.HTTP_404_NOT_FOUND,
-        )
-
-    refresh = RefreshToken.for_user(user)
-    return Response(
-        {
-            "detail": detail,
-            "access": str(refresh.access_token),
-            "refresh": str(refresh),
-        },
-        status=status_code,
     )
 
 

@@ -5,19 +5,32 @@ from . import views
 
 urlpatterns = [
     path("token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
-    path("send-otp/", views.send_otp, name="send_otp"),
-    path("login-register/", views.login_register, name="login_register"),
-    path("logout/", views.logout, name="logout"),
-    path("register-admin/", views.register_admin, name="register_admin"),
     path(
-        "login-admin-step1/",
-        views.login_admin_step_1,
-        name="login_admin_step_1",
+        "customer-login-register-otp/",
+        views.customer_login_register_otp,
+        name="customer_login_register_otp",
     ),
     path(
-        "login-admin-step2/",
-        views.login_admin_step_2,
-        name="login_admin_step_2",
+        "customer-login-register/",
+        views.customer_login_register,
+        name="customer_login_register",
+    ),
+    path("logout/", views.logout, name="logout"),
+    path(
+        "admin-register-otp/",
+        views.admin_register_otp,
+        name="admin_register_otp",
+    ),
+    path("admin-register/", views.admin_register, name="admin_register"),
+    path(
+        "admin-login-step1/",
+        views.admin_login_step_1,
+        name="admin_login_step_1",
+    ),
+    path(
+        "admin-login-step2/",
+        views.admin_login_step_2,
+        name="admin_login_step_2",
     ),
     path("profile/", views.ProfileView.as_view(), name="profile"),
 ]

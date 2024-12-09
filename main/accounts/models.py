@@ -1,8 +1,4 @@
-from django.contrib.auth.models import (
-    AbstractBaseUser,
-    BaseUserManager,
-    PermissionsMixin,
-)
+from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
 from django.utils.timezone import now, timedelta
 
@@ -17,7 +13,14 @@ class OTPRequest(models.Model):
     def default_otp_attemps_expiry():
         return now() + timedelta(minutes=30)
 
+    OTP_TYPE_CHOICES = [
+        ("customer_login", "Customer Login"),
+        ("admin_login", "Admin Login"),
+        ("admin_register", "Admin Register"),
+        ("password_change", "Password change"),
+    ]
     phone_number = models.CharField(max_length=15, unique=True)
+    otp_type = models.CharField(max_length=20, choices=OTP_TYPE_CHOICES)
     otp_code = models.CharField(max_length=6, blank=True, null=True)
     otp_attemps = models.PositiveIntegerField(default=0)
 
@@ -38,8 +41,6 @@ class CustomUserManager(BaseUserManager):
         user = self.model(phone_number=phone_number, **extra_fields)
         if password:
             user.set_password(password)
-        else:
-            user.set_password(phone_number)
         user.save(using=self._db)
         return user
 
@@ -53,13 +54,9 @@ class CustomUserManager(BaseUserManager):
 
 
 # ---------------------------------------------------------------------
-class CustomUser(AbstractBaseUser, PermissionsMixin):
+class CustomUser(AbstractUser):
+    username = None
     phone_number = models.CharField(max_length=15, unique=True)
-    is_staff = models.BooleanField(default=False)
-    is_active = models.BooleanField(default=True)
-    date_joined = models.DateTimeField(auto_now_add=True)
-    first_name = models.CharField(max_length=50, blank=True, null=True)
-    last_name = models.CharField(max_length=50, blank=True, null=True)
 
     USERNAME_FIELD = "phone_number"
 
