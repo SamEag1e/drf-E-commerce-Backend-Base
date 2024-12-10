@@ -87,7 +87,7 @@ def _veryify_otp(request, otp_type):
 # ---------------------------------------------------------------------
 @api_view(["POST"])
 @permission_classes([AllowAny])
-def customer_login_register_otp(request):
+def customer_login_otp(request):
     _, detail, status_code = _send_otp_check(request, "customer_login")
     return Response({"detail": detail}, status=status_code)
 
@@ -95,7 +95,7 @@ def customer_login_register_otp(request):
 # ---------------------------------------------------------------------
 @api_view(["POST"])
 @permission_classes([AllowAny])
-def customer_login_register(request):
+def customer_login(request):
     if True in (
         request.data.get("is_staff"),
         request.data.get("is_superuser"),
@@ -186,7 +186,7 @@ def admin_login_step_2(request):
 # ---------------------------------------------------------------------
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
-def admin_register_otp(request):
+def add_admin_otp(request):
     _, detail, status_code = _send_otp_check(request, "admin_register")
     return Response({"detail": detail}, status=status_code)
 
@@ -194,7 +194,7 @@ def admin_register_otp(request):
 # ---------------------------------------------------------------------
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
-def admin_register(request):
+def add_admin(request):
     phone_number = request.data.get("phone_number")
     password = request.data.get("password")
     is_staff = request.data.get("is_staff", False)
